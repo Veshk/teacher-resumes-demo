@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Резюме преподавателей — ВЭШ</title>
+<link rel="stylesheet" href="./assets/resumes.css">
+<meta name="csrf-token" content="01032acf2bc275210b47a0bef09933449a57f5d54d9cf438"><script src="./assets/demo-data.js"></script><script src="./assets/demo.js"></script></head>
+<body><header class="portal-bar"><a href="./index.html" class="brand"><b>ВЭШ</b><span>ПОРТАЛ СОТРУДНИКОВ</span></a><nav><a href="./technical.html">Как устроен раздел</a><span class="local-label">Демонстрация</span></nav></header>
+
+<main class="workspace">
+<a class="back-link" href="./index.html">← К базе резюме</a>
+<section class="hero"><div><p class="eyebrow">ПРЕПОДАВАТЕЛИ И ЭКСПЕРТИЗА</p><h1>База резюме</h1><p>Обновляйте содержание. Оформление полного и мини-резюме соберётся автоматически.</p></div><div class="hero-side"><strong id="total">—</strong><span>карточек преподавателей</span></div></section>
+<div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+<div class="workspace-tools"><p><span class="dot"></span> Демонстрационные карточки <span class="muted">Изменения видны только вам</span></p><button id="collection" class="secondary">Сборник мини-резюме <span id="selection-count">0</span></button></div>
+<div class="studio">
+<aside class="catalog" aria-label="Каталог преподавателей"><div class="catalog-controls"><label class="sr-only" for="search">Поиск преподавателя или экспертизы</label><input id="search" type="search" placeholder="Имя или экспертиза…"><div class="filter-line"><select id="status-filter" aria-label="Статус резюме"><option value="all">Все статусы</option><option value="review">Нужно сверить</option><option value="draft">Черновики</option><option value="approved">Подтверждены</option><option value="mini-only">Только мини-резюме</option></select><span id="found" class="muted"></span></div><label class="select-all"><input id="select-all" type="checkbox"> Выбрать найденные для сборника</label></div><div id="people" class="people"></div><details class="unmatched"><summary id="unmatched-title">Несопоставленные исходники</summary><div id="unmatched"></div></details></aside>
+<section id="editor" class="editor" aria-label="Редактор резюме"><div class="empty">Загружаем каталог…</div></section>
+<aside class="preview" aria-label="Предпросмотр документа"><div class="preview-heading"><div><p class="eyebrow">ГОТОВЫЙ ДОКУМЕНТ</p><h2>Предпросмотр</h2></div><span id="preview-version" class="muted"></span></div><div id="preview-state" class="preview-state">Сохраните изменения и соберите документ. Здесь появятся страницы того же PDF, который можно скачать.</div><div id="downloads" class="download-row" hidden></div><div id="pages" class="pages"></div></aside>
+</div></main>
+<dialog id="source-dialog"><div class="dialog-top"><h2>Сравнение исходников</h2><button id="close-source" class="secondary">Закрыть</button></div><p id="source-label" class="muted"></p><p class="callout">Выбор исходника создаст новую редакцию полного резюме. Текст мини-резюме сохранится. Статус останется «Черновик».</p><div class="compare"><section><h3>Сейчас в карточке</h3><pre id="before-source"></pre></section><section><h3>Выбранный исходник</h3><pre id="after-source"></pre></section></div><button id="apply-source">Использовать в черновике</button></dialog>
+
+<script src="./assets/resumes.js" defer></script></body></html>

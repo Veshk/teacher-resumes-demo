@@ -1,0 +1,46 @@
+{
+  "id": "737fedc08aed4f22b68c5e41c5809414",
+  "kind": "collection",
+  "template": "20261113-current-1",
+  "pages": [
+    "page-1.png"
+  ],
+  "profiles": [
+    {
+      "id": "demo-anna",
+      "name": "Соколова Анна Сергеевна",
+      "revision": 2,
+      "status": "approved"
+    },
+    {
+      "id": "demo-mikhail",
+      "name": "Орлов Михаил Андреевич",
+      "revision": 2,
+      "status": "approved"
+    },
+    {
+      "id": "demo-elena",
+      "name": "Волкова Елена Викторовна",
+      "revision": 2,
+      "status": "draft"
+    },
+    {
+      "id": "demo-dmitry",
+      "name": "Морозов Дмитрий Павлович",
+      "revision": 1,
+      "status": "review"
+    },
+    {
+      "id": "demo-olga",
+      "name": "Лебедева Ольга Игоревна",
+      "revision": 2,
+      "status": "approved"
+    },
+    {
+      "id": "demo-sergey",
+      "name": "Белов Сергей Алексеевич",
+      "revision": 1,
+      "status": "review"
+    }
+  ]
+}

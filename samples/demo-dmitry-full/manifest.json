@@ -1,0 +1,16 @@
+{
+  "id": "87514331afd44c5d998345b3cdeda60e",
+  "kind": "full",
+  "template": "20261113-current-1",
+  "pages": [
+    "page-1.png"
+  ],
+  "profiles": [
+    {
+      "id": "demo-dmitry",
+      "name": "Морозов Дмитрий Павлович",
+      "revision": 1,
+      "status": "review"
+    }
+  ]
+}

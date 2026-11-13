@@ -1,0 +1,16 @@
+{
+  "id": "7542d4b276f3430594620f14048c9741",
+  "kind": "mini",
+  "template": "20261113-current-1",
+  "pages": [
+    "page-1.png"
+  ],
+  "profiles": [
+    {
+      "id": "demo-olga",
+      "name": "Лебедева Ольга Игоревна",
+      "revision": 2,
+      "status": "approved"
+    }
+  ]
+}

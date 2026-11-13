@@ -1,0 +1,16 @@
+{
+  "id": "23762fad18bb4265a33bda0ff56a41e0",
+  "kind": "full",
+  "template": "20261113-current-1",
+  "pages": [
+    "page-1.png"
+  ],
+  "profiles": [
+    {
+      "id": "demo-elena",
+      "name": "Волкова Елена Викторовна",
+      "revision": 2,
+      "status": "draft"
+    }
+  ]
+}

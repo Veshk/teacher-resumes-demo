@@ -1,0 +1,16 @@
+{
+  "id": "1f5caa69a8ec49c59d209e9bec624503",
+  "kind": "full",
+  "template": "20261113-current-1",
+  "pages": [
+    "page-1.png"
+  ],
+  "profiles": [
+    {
+      "id": "demo-mikhail",
+      "name": "Орлов Михаил Андреевич",
+      "revision": 2,
+      "status": "approved"
+    }
+  ]
+}

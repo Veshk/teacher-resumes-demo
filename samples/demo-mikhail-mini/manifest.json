@@ -1,0 +1,16 @@
+{
+  "id": "2d495473bdd64759bc8e2de0e1299c66",
+  "kind": "mini",
+  "template": "20261113-current-1",
+  "pages": [
+    "page-1.png"
+  ],
+  "profiles": [
+    {
+      "id": "demo-mikhail",
+      "name": "Орлов Михаил Андреевич",
+      "revision": 2,
+      "status": "approved"
+    }
+  ]
+}

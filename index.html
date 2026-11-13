@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Резюме преподавателей — ВЭШ</title>
+<link rel="stylesheet" href="./assets/resumes.css">
+<meta name="csrf-token" content="01032acf2bc275210b47a0bef09933449a57f5d54d9cf438"><script src="./assets/demo-data.js"></script><script src="./assets/demo.js"></script></head>
+<body><header class="portal-bar"><a href="./index.html" class="brand"><b>ВЭШ</b><span>ПОРТАЛ СОТРУДНИКОВ</span></a><nav><a href="./technical.html">Как устроен раздел</a><span class="local-label">Демонстрация</span></nav></header>
+
+<main class="workspace library-workspace">
+<section class="hero"><div><p class="eyebrow">ПРЕПОДАВАТЕЛИ И ЭКСПЕРТИЗА</p><h1>База резюме</h1><p>Найдите преподавателя и скачайте резюме в нужном формате.</p></div><div class="hero-side"><strong id="total">—</strong><span>карточек в базе</span></div></section>
+<div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+<div class="library-toolbar"><div class="library-search"><label for="search">Преподаватель или экспертиза</label><input id="search" type="search" placeholder="Начните вводить имя или направление…"></div><label>Версии<select id="version-filter"><option value="all">Все резюме</option><option value="full">Есть полное</option><option value="mini">Есть мини-резюме</option><option value="mini-only">Только мини-резюме</option></select></label><label>Актуальность<select id="status-filter"><option value="all">Все статусы</option><option value="approved">Подтверждены</option><option value="review">Нужно сверить</option><option value="draft">Черновики</option></select></label><label>Порядок<select id="sort"><option value="name">По имени</option><option value="updated">По обновлению</option></select></label></div>
+<div class="library-summary"><div><strong id="found">—</strong> карточек <span class="muted">Полное: <span id="full-count">—</span> / мини: <span id="mini-count">—</span></span></div><button id="collection" class="secondary" disabled>Сборник мини-резюме <span id="selection-count">0</span></button></div>
+<div class="library-table"><div class="library-row library-table-head"><label><input id="select-all" type="checkbox" aria-label="Выбрать найденные мини-резюме"></label><span>Преподаватель</span><span>Обновление и проверка</span><span>Скачать резюме</span><span></span></div><div id="people" aria-label="База резюме"><p class="empty">Загружаем базу…</p></div></div>
+<p class="library-note">Дата изменения показывает правки в сервисе. Для импортированных материалов без новых правок она пока неизвестна. Подтверждение актуальности отмечается отдельно.</p>
+</main>
+<dialog id="reader"><div class="dialog-top"><h2 id="reader-title">Резюме</h2><button id="close-reader" class="secondary">Закрыть</button></div><div id="reader-body" class="reader-body"></div></dialog>
+<dialog id="download-dialog"><div class="dialog-top"><h2 id="download-title">Документ</h2><button id="close-download" class="secondary">Закрыть</button></div><p id="download-status" class="callout" role="status"></p><div id="download-links" class="download-row"></div><div id="download-pages" class="download-pages"></div></dialog>
+
+<script src="./assets/library.js" defer></script></body></html>

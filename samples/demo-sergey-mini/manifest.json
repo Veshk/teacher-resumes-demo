@@ -1,0 +1,16 @@
+{
+  "id": "56a082f1a8804a42b90f08ccd2a1e1b8",
+  "kind": "mini",
+  "template": "20261113-current-1",
+  "pages": [
+    "page-1.png"
+  ],
+  "profiles": [
+    {
+      "id": "demo-sergey",
+      "name": "Белов Сергей Алексеевич",
+      "revision": 1,
+      "status": "review"
+    }
+  ]
+}
