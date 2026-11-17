@@ -1,12 +1,26 @@
+async function waitForResumeJob(id){
+  for(let attempt=0;attempt<180;attempt++){
+    await new Promise(resolve=>setTimeout(resolve,1500));
+    const response=await fetch('/resumes/api/jobs/'+encodeURIComponent(id));
+    if(!response.ok)throw new Error('Не удалось проверить сборку. Обновите страницу.');
+    const job=await response.json();
+    if(job.status==='done')return job.manifest;
+    if(job.status==='failed')throw new Error(job.error);
+  }
+  throw new Error('Документ ещё собирается. Повторите загрузку через несколько минут.');
+}
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const statusText={approved:'Подтверждено',review:'Нужно сверить',draft:'Черновик'};
+const canEdit=document.body.dataset.canEdit==='true';
 const state={people:[],selected:new Set(),busy:false};
 const date = value => value ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Yekaterinburg'}).format(new Date(value)) : 'Дата неизвестна';
 async function api(path,data){
   if(window.ResumeDemo)return window.ResumeDemo.api(path,data);
-  const response=await fetch('/resumes/api/'+path,data===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':$('meta[name="csrf-token"]').content},body:JSON.stringify(data)});
-  const result=await response.json();if(!response.ok)throw new Error(result.error||'Не удалось выполнить запрос.');return result;
+  const response=await fetch('/resumes/api/'+path,data===undefined?{}:{method:'POST',headers:{'X-CSRF-Token':$('meta[name="csrf-token"]').content},body:new URLSearchParams({csrf:$('meta[name="csrf-token"]').content,payload:JSON.stringify(data)})});
+  const result=await response.json();
+  if(response.status===202) return await waitForResumeJob(result.job_id);
+if(!response.ok)throw new Error(result.error||'Не удалось выполнить запрос.');return result;
 }
 function message(text){$('#notice').textContent=text;$('#notice').hidden=false;}
 const safe=fn=>async event=>{try{await fn(event);}catch(error){message(error.message);}};
@@ -21,11 +35,11 @@ function draw(){
   $('#full-count').textContent=list.filter(p=>p.has_full).length;$('#mini-count').textContent=list.filter(p=>p.has_mini).length;
   $('#selection-count').textContent=state.selected.size;$('#collection').disabled=!state.selected.size||state.busy;
   const selectable=list.filter(p=>p.has_mini);$('#select-all').checked=!!selectable.length&&selectable.every(p=>state.selected.has(p.id));$('#select-all').indeterminate=selectable.some(p=>state.selected.has(p.id))&&!$('#select-all').checked;
-  $('#people').innerHTML=list.map(p=>`<article class="library-row"><input type="checkbox" data-select="${p.id}" aria-label="Включить ${esc(p.name)} в сборник" ${state.selected.has(p.id)?'checked':''} ${!p.has_mini?'disabled':''}><div class="library-person">${p.has_photo?`<img class="avatar" src="/resumes/files/photo/${p.id}" alt="" loading="lazy">`:`<span class="avatar initials">${esc(p.name.split(' ').slice(0,2).map(x=>x[0]).join(''))}</span>`}<div><button class="person-title" data-read="${p.id}">${esc(p.name)}</button><p class="expertise">${esc(p.intro)}</p></div></div><div class="freshness"><span class="status ${p.status}">${statusText[p.status]}</span><strong>${p.updated_at?'Изменено '+date(p.updated_at):'Дата изменения неизвестна'}</strong><small>${p.checked_at?'Проверено '+date(p.checked_at):'Сведения ещё не подтверждены'}</small></div><div class="file-options">${files(p,'full','Полное',p.has_full)}${files(p,'mini','Мини',p.has_mini)}</div><a class="edit-link" href="${window.ResumeDemo?'./editor.html':'/resumes/editor'}?id=${encodeURIComponent(p.id)}">Редактировать</a></article>`).join('')||'<div class="empty">По вашему запросу ничего не найдено.</div>';
+  $('#people').innerHTML=list.map(p=>`<article class="library-row"><input type="checkbox" data-select="${p.id}" aria-label="Включить ${esc(p.name)} в сборник" ${state.selected.has(p.id)?'checked':''} ${!p.has_mini?'disabled':''}><div class="library-person">${p.has_photo?`<img class="avatar" src="/resumes/files/photo/${p.id}" alt="" loading="lazy">`:`<span class="avatar initials">${esc(p.name.split(' ').slice(0,2).map(x=>x[0]).join(''))}</span>`}<div><button class="person-title" data-read="${p.id}">${esc(p.name)}</button><p class="expertise">${esc(p.intro)}</p></div></div><div class="freshness"><span class="status ${p.status}">${statusText[p.status]}</span><strong>${p.updated_at?'Изменено '+date(p.updated_at):'Дата изменения неизвестна'}</strong><small>${p.checked_at?'Проверено '+date(p.checked_at):'Сведения ещё не подтверждены'}</small></div><div class="file-options">${files(p,'full','Полное',p.has_full)}${files(p,'mini','Мини',p.has_mini)}</div>${canEdit?`<a class="edit-link" href="${window.ResumeDemo?'./editor.html':'/resumes/editor'}?id=${encodeURIComponent(p.id)}" aria-label="Редактировать резюме: ${esc(p.name)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5L8 21H3v-5L16 3Z"/><path d="m13 6 5 5"/></svg><span>Редактировать</span></a>`:''}</article>`).join('')||'<div class="empty">По вашему запросу ничего не найдено.</div>';
 }
 async function read(id){
   const p=await api('profiles/'+id),d=p.data;$('#reader-title').textContent=p.name;
-  $('#reader-body').innerHTML=`<span class="status ${p.status}">${statusText[p.status]}</span><p class="read-intro">${esc(d.intro||d.mini)}</p>${d.sections.map(s=>`<section><h3>${esc(s.title)}</h3><p>${esc(s.content)}</p>${s.rows.map(r=>`<div class="read-period"><strong>${esc(r.period)}</strong><p>${esc(r.text)}</p></div>`).join('')}</section>`).join('')}${d.mini&&d.intro?`<section><h3>Мини-резюме</h3><p>${esc(d.mini)}</p><p>${esc(d.mini_clients)}</p></section>`:''}<a class="edit-link" href="${window.ResumeDemo?'./editor.html':'/resumes/editor'}?id=${encodeURIComponent(id)}">Перейти к редактированию</a>`;
+  $('#reader-body').innerHTML=`<span class="status ${p.status}">${statusText[p.status]}</span><p class="read-intro">${esc(d.intro||d.mini)}</p>${d.sections.map(s=>`<section><h3>${esc(s.title)}</h3><p>${esc(s.content)}</p>${s.rows.map(r=>`<div class="read-period"><strong>${esc(r.period)}</strong><p>${esc(r.text)}</p></div>`).join('')}</section>`).join('')}${d.mini&&d.intro?`<section><h3>Мини-резюме</h3><p>${esc(d.mini)}</p><p>${esc(d.mini_clients)}</p></section>`:''}${canEdit?`<a class="edit-link" href="${window.ResumeDemo?'./editor.html':'/resumes/editor'}?id=${encodeURIComponent(id)}">Перейти к редактированию</a>`:''}`;
   $('#reader').showModal();
 }
 async function download(ids,kind,format){
@@ -49,4 +63,4 @@ $('#people').addEventListener('change',e=>{const id=e.target.dataset.select;if(i
 $('#people').addEventListener('click',safe(async e=>{const b=e.target.closest('button');if(b?.dataset.read)await read(b.dataset.read);if(b?.dataset.file){const[id,kind,format]=b.dataset.file.split(':');await download([id],kind,format);}}));
 $('#collection').addEventListener('click',safe(()=>download(state.people.filter(p=>state.selected.has(p.id)).map(p=>p.id),'collection')));
 $('#close-reader').addEventListener('click',()=>$('#reader').close());$('#close-download').addEventListener('click',()=>$('#download-dialog').close());
-safe(async()=>{state.people=(await api('profiles')).profiles;draw();})();
+safe(async()=>{if(window.ResumeDemo)document.querySelectorAll('.server-only').forEach(e=>e.hidden=true);state.people=(await api('profiles')).profiles;draw();})();

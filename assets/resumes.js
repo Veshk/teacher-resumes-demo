@@ -1,8 +1,22 @@
+async function waitForResumeJob(id){
+  for(let attempt=0;attempt<180;attempt++){
+    await new Promise(resolve=>setTimeout(resolve,1500));
+    const response=await fetch('/resumes/api/jobs/'+encodeURIComponent(id));
+    if(!response.ok)throw new Error('Не удалось проверить сборку. Обновите страницу.');
+    const job=await response.json();
+    if(job.status==='done')return job.manifest;
+    if(job.status==='failed')throw new Error(job.error);
+  }
+  throw new Error('Документ ещё собирается. Повторите загрузку через несколько минут.');
+}
 const $ = (selector, root = document) => root.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const statusText = {review:'Нужно сверить', draft:'Черновик', approved:'Подтверждено'};
-const state = {catalog:[], current:null, form:null, tab:'full', dirty:false, selected:new Set(), source:null, busy:false, rendered:null};
+const state = {catalog:[], sections:[], current:null, form:null, tab:'full', dirty:false, selected:new Set(), source:null, busy:false, rendered:null, requestId:null, creationRequest:null, openVersion:0};
 const formatDate = value => value ? new Intl.DateTimeFormat('ru-RU', {dateStyle:'short', timeStyle:'short', timeZone:'Asia/Yekaterinburg'}).format(new Date(value)) : 'Ещё не проверено';
+const sectionKey = value => value.replace(/\s+/g,' ').trim().replace(/:+$/,'').trim().toLocaleLowerCase('ru').replaceAll('ё','е');
+const fullContent = data => !!(data.intro?.trim() || data.sections?.some(s=>s.content?.trim() || s.rows?.some(r=>r.period?.trim() || r.text?.trim())));
+const editableData = data => Object.fromEntries(['name','intro','mini','mini_clients','sections'].map(key=>[key,structuredClone(data[key])]));
 
 function notify(text, error = false) {
   $('#notice').textContent = text;
@@ -12,10 +26,11 @@ function notify(text, error = false) {
 async function api(path, data) {
   if (window.ResumeDemo) return window.ResumeDemo.api(path, data);
   const response = await fetch('/resumes/api/' + path, data === undefined ? {} : {
-    method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':$('meta[name="csrf-token"]').content}, body:JSON.stringify(data)
+    method:'POST', headers:{'X-CSRF-Token':$('meta[name="csrf-token"]').content}, body:new URLSearchParams({csrf:$('meta[name="csrf-token"]').content,payload:JSON.stringify(data)})
   });
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || 'Не удалось выполнить запрос.');
+  if(response.status===202) return await waitForResumeJob(payload.job_id);
+  if (!response.ok) {const error=new Error(payload.error || 'Не удалось выполнить запрос.');error.status=response.status;throw error;}
   return payload;
 }
 const guarded = fn => async event => { try { await fn(event); } catch (error) { notify(error.message, true); } };
@@ -45,24 +60,64 @@ function catalog() {
   $('#select-all').indeterminate = selectable.some(p=>state.selected.has(p.id)) && !$('#select-all').checked;
 }
 async function refreshCatalog() {
-  const result = await api('profiles'); state.catalog = result.profiles;
+  const [result, options] = await Promise.all([api('profiles'),api('options')]); state.catalog = result.profiles; state.sections = options.sections;
   $('#unmatched-title').textContent = `Несопоставленные исходники (${result.unmatched.length})`;
   $('#unmatched').innerHTML = result.unmatched.map(s=>`<a href="/resumes/files/source/${s.id}">${esc(s.label)}</a>`).join('') || 'Все исходники сопоставлены.';
   catalog();
 }
 function canLeave() { return !state.dirty || window.confirm('Есть несохранённые изменения. Перейти без сохранения?'); }
 async function openProfile(id) {
-  if (state.current?.id===id || !canLeave()) return;
+  if (state.busy || state.current?.id===id || !canLeave()) return;
+  const version=++state.openVersion;
   const profile = await api('profiles/' + id);
+  if(version!==state.openVersion)return;
   state.current = profile; state.form = structuredClone(profile.data); state.dirty = false;
   state.tab = profile.data.template ? 'full' : 'mini';
+  state.requestId = null; state.creationRequest = null;
+  if (!window.ResumeDemo) history.replaceState(null,'','/resumes/editor?id='+encodeURIComponent(id));
   clearPreview(); editor(); catalog();
+}
+function newProfile() {
+  if (state.busy || !canLeave()) return;
+  state.openVersion++;
+  const data={name:'',intro:'',compiled:'',mini:'',mini_clients:'',sections:[],photo:'',template:'',mini_source:'',source_id:''};
+  state.current={id:null,name:'',revision:0,status:'draft',checked_at:null,data,sources:[],history:[]};
+  state.form=structuredClone(data); state.requestId=crypto.randomUUID(); state.creationRequest=null;
+  state.dirty=false; state.tab='full';
+  history.replaceState(null,'','/resumes/editor?new=1');
+  clearPreview(); editor(); catalog(); $('[data-field="name"]').focus();
+}
+function sectionChoices() {
+  const choices=new Map();
+  for (const title of [...state.sections,...(state.form?.sections||[]).map(s=>s.title)]) if(sectionKey(title)) choices.set(sectionKey(title),title);
+  return [...choices.values()];
+}
+function drawSectionChoices() {
+  const query=sectionKey($('#section-search').value);
+  const choices=sectionChoices();
+  $('#section-options').innerHTML=choices.map((title,index)=>({title,index})).filter(({title})=>sectionKey(title).includes(query)).map(({title,index})=>`<button type="button" class="section-choice" data-section-choice="${index}">${esc(title)}</button>`).join('') || '<p class="muted">Совпадений нет. Можно указать своё название ниже.</p>';
+  $('#section-choice-count').textContent=`Вариантов из базы: ${choices.length}`;
+}
+function chooseSection(title) {
+  title=title.trim(); if(!title){$('#section-error').textContent='Введите название раздела.';return;}
+  if(title.length>150){$('#section-error').textContent='Название раздела должно быть не длиннее 150 символов.';return;}
+  let index=state.form.sections.findIndex(s=>sectionKey(s.title)===sectionKey(title));
+  if(index<0){
+    if(state.form.sections.length>=30)throw new Error('В одном резюме допускается до 30 разделов.');
+    state.form.sections.push({title,content:'',rows:[]}); index=state.form.sections.length-1; dirty();
+  }
+  state.tab='full'; $('#section-dialog').close(); editor(); $(`[data-section-title="${index}"]`).focus();
+}
+function additionOptions() {
+  const existing=state.form.sections;
+  const other=state.sections.map((title,index)=>({title,index})).filter(({title})=>!existing.some(s=>sectionKey(s.title)===sectionKey(title)));
+  return `<optgroup label="Поля карточки"><option value="field:intro">Представление</option><option value="field:mini">Мини-резюме: краткое представление</option><option value="field:mini_clients">Мини-резюме: в числе клиентов</option></optgroup>${existing.length?`<optgroup label="Разделы этого резюме">${existing.map((s,i)=>`<option value="section:${i}">${esc(s.title)}</option>`).join('')}</optgroup>`:''}${other.length?`<optgroup label="Другие разделы из базы — создать при добавлении">${other.map(({title,index})=>`<option value="new:${index}">${esc(title)}</option>`).join('')}</optgroup>`:''}`;
 }
 function field(key, title, value, {textarea=true, hint='', rows=4} = {}) {
   return `<label class="field"><span>${esc(title)}</span>${textarea?`<textarea data-field="${key}" rows="${rows}">${esc(value)}</textarea>`:`<input data-field="${key}" value="${esc(value)}">`}${hint?`<small>${esc(hint)}</small>`:''}</label>`;
 }
 function sectionEditor(section, index) {
-  return `<section class="section-editor" data-section="${index}"><div class="section-top"><input aria-label="Название раздела ${index+1}" data-section-title="${index}" value="${esc(section.title)}"><button class="quiet" data-up="${index}" aria-label="Переместить раздел выше" ${index===0?'disabled':''}>↑</button><button class="quiet danger" data-remove-section="${index}" aria-label="Удалить раздел">×</button></div>
+  return `<section class="section-editor" data-section="${index}"><div class="section-top"><input aria-label="Название раздела ${index+1}" data-section-title="${index}" list="section-titles" maxlength="150" value="${esc(section.title)}"><button class="quiet" data-up="${index}" aria-label="Переместить раздел выше" ${index===0?'disabled':''}>↑</button><button class="quiet danger" data-remove-section="${index}" aria-label="Удалить раздел">×</button></div>
   <label class="field"><span class="sr-only">Текст раздела ${esc(section.title)}</span><textarea data-section-content="${index}" rows="${Math.min(12, Math.max(3, section.content.length/95))}">${esc(section.content)}</textarea><small>Абзацы разделяются пустой строкой. Переносы страниц рассчитываются автоматически.</small></label>
   <button class="secondary small-button" data-add-row="${index}">+ Строка с периодом сверху</button>
   ${section.rows.map((r,i)=>`<div class="timeline-row"><input data-period="${index}:${i}" value="${esc(r.period)}" aria-label="Период строки ${i+1}" placeholder="Период"><textarea data-row-text="${index}:${i}" aria-label="Описание строки ${i+1}" rows="2">${esc(r.text)}</textarea><button class="quiet danger" data-remove-row="${index}:${i}" aria-label="Удалить строку">×</button></div>`).join('')}</section>`;
@@ -70,28 +125,30 @@ function sectionEditor(section, index) {
 function formBody() {
   const d = state.form;
   if (state.tab === 'mini') return `<p class="callout">Краткая версия хранится отдельно от полного текста. Из неё собираются индивидуальное мини-резюме и общий сборник.</p>${field('mini','Краткое представление',d.mini,{rows:9})}${field('mini_clients','В числе клиентов',d.mini_clients,{rows:5,hint:'Необязательный блок. В готовом документе пустые блоки не показываются.'})}`;
-  if (state.tab === 'sources') return `<p class="callout warning">Ни один вариант обновления не считается согласованным автоматически. Сравните текст перед выбором. Цветовые выделения сохраняются в оригиналах.</p>${state.current.sources.map(s=>`<article class="source-row"><h3>${esc(s.label)}</h3>${s.id===d.source_id?'<span class="status">Основа текущего черновика</span>':''}<p>${s.warnings.map(esc).join(' ')}</p><a href="/resumes/files/source/${s.id}">Скачать оригинал</a>${s.usable?`<button class="secondary" data-compare="${s.id}">Сравнить текст</button>`:''}</article>`).join('') || '<p class="muted">Индивидуальные исходники не найдены. Мини-резюме взято из общего сборника.</p>'}`;
+  if (state.tab === 'sources') return `<p class="callout warning">Ни один вариант обновления не считается согласованным автоматически. Сравните текст перед выбором. Цветовые выделения сохраняются в оригиналах.</p>${state.current.sources.map(s=>`<article class="source-row"><h3>${esc(s.label)}</h3>${s.id===d.source_id?'<span class="status">Основа текущего черновика</span>':''}<p>${s.warnings.map(esc).join(' ')}</p><a href="/resumes/files/source/${s.id}">Скачать оригинал</a>${s.usable?`<button class="secondary" data-compare="${s.id}">Сравнить текст</button>`:''}</article>`).join('') || '<p class="muted">Индивидуальных исходников нет. Для нового преподавателя используется чистый бланк ВЭШ.</p>'}`;
   if (state.tab === 'history') return `<p class="callout">Сохранённые редакции остаются в истории. «Взять текст» переносит прежнее содержание в редактор; текущая версия изменится только после сохранения.</p>${state.current.history.map(h=>`<article class="history-row"><strong>Редакция ${h.number}</strong> <span class="status ${h.status}">${statusText[h.status]}</span><p>${esc(h.action)}</p><p>${formatDate(h.at)} ЕКБ<br>${esc(h.actor)}</p>${h.number!==state.current.revision?`<button class="secondary small-button" data-restore="${h.number}">Взять текст</button>`:''}</article>`).join('')}`;
-  return `${!d.template?'<p class="callout warning">Полный исходник не разобран. Сейчас доступен выпуск мини-резюме. Полный документ потребуется подготовить отдельно.</p>':''}
-  ${field('name','ФИО преподавателя',d.name,{textarea:false})}${field('intro','Представление рядом с фотографией',d.intro,{rows:6,hint:'Первый абзац выделяется полужирным, как в нынешнем шаблоне.'})}${field('compiled','Дата составления в документе',d.compiled,{textarea:false,hint:'Это текст исходника. Подтверждение актуальности фиксируется отдельно.'})}
-  <details class="quick-add"><summary>Добавить новые сведения</summary><textarea id="addition" placeholder="Вставьте новый проект, опыт или другие сведения…" aria-label="Новые сведения"></textarea><select id="addition-target" aria-label="Раздел для новых сведений">${d.sections.map((s,i)=>`<option value="${i}">${esc(s.title)}</option>`).join('')}<option value="intro">Представление</option></select><button class="secondary small-button" id="append-addition">Добавить в черновик</button></details>
-  ${d.sections.map(sectionEditor).join('')}<div class="section-actions"><button class="secondary small-button" id="add-section">+ Добавить раздел</button></div>`;
+  return `${!state.current.id?'<p class="callout">Новое резюме. Укажите ФИО и заполните нужные поля. Карточка появится в базе после сохранения черновика; остальные сведения можно добавить позже.</p>':!d.template?'<p class="callout">Полное резюме пока не заполнено. Добавьте представление или нужные разделы и сохраните черновик — документ можно будет собрать в текущем оформлении ВЭШ. Мини-резюме хранится отдельно.</p>':''}
+  ${field('name','ФИО преподавателя',d.name,{textarea:false})}${field('intro','Представление рядом с фотографией',d.intro,{rows:6,hint:'Первый абзац выделяется полужирным, как в нынешнем шаблоне.'})}<div class="field"><span id="compiled-label">Дата составления в документе</span><output id="compiled-date" aria-labelledby="compiled-label">${esc(d.compiled||'Будет указана при сохранении правок')}</output><small>Месяц и год обновляются автоматически при сохранении изменений в резюме.</small></div>
+  <details class="quick-add"><summary>Добавить новые сведения</summary><textarea id="addition" placeholder="Вставьте новый проект, опыт или другие сведения…" aria-label="Новые сведения"></textarea><select id="addition-target" aria-label="Раздел или поле для новых сведений">${additionOptions()}</select><button class="secondary small-button" id="append-addition">Добавить в черновик</button></details>
+  <datalist id="section-titles">${sectionChoices().map(title=>`<option value="${esc(title)}"></option>`).join('')}</datalist>${d.sections.map(sectionEditor).join('')}<div class="section-actions"><button class="secondary small-button" id="add-section">+ Добавить раздел</button></div>`;
 }
 function editor() {
   const p = state.current;
   if (!p) return;
-  $('#editor').innerHTML = `<div class="profile-heading">${avatar(p)}<div><h2>${esc(state.form.name)}</h2><span class="status ${p.status}">${statusText[p.status]}</span><span class="revision-label">Редакция ${p.revision}</span></div></div>
+  $('#editor').innerHTML = `<div class="profile-heading">${p.id?avatar(p):'<span class="avatar initials" aria-hidden="true">+</span>'}<div><h2>${esc(state.form.name||'Новый преподаватель')}</h2><span class="status ${p.status}">${statusText[p.status]}</span><span class="revision-label">${p.id?'Редакция '+p.revision:'Ещё не сохранено'}</span></div></div>
   <div class="tabs" role="tablist">${[['full','Полное резюме'],['mini','Мини-резюме'],['sources',`Исходники (${p.sources.length})`],['history','История']].map(([id,title])=>`<button class="tab ${state.tab===id?'active':''}" role="tab" aria-selected="${state.tab===id}" data-tab="${id}">${title}</button>`).join('')}</div>
   <div id="form-body">${formBody()}</div><div class="editor-actions"><div id="save-state" class="save-state"></div><div class="action-row"><button id="save">Сохранить черновик</button><button class="secondary" id="approve">Подтвердить сведения</button></div><div class="render-actions"><button class="secondary" id="render-full">Собрать полное</button><button class="secondary" id="render-mini">Собрать мини</button></div></div>`;
   updateActions();
 }
 function updateActions() {
   if (!state.current) return;
-  $('#save-state').textContent = state.dirty ? 'Есть несохранённые изменения' : `Сохранено. Последняя проверка: ${formatDate(state.current.checked_at)}`;
-  $('#save').disabled = !state.dirty || state.busy;
-  $('#approve').disabled = state.dirty || state.busy || state.current.status === 'approved';
-  $('#render-full').disabled = state.dirty || state.busy || !state.current.data.template;
-  $('#render-mini').disabled = state.dirty || state.busy || !state.current.data.mini;
+  const isNew=!state.current.id;
+  $('#save-state').textContent = isNew ? 'Новая карточка: для первого сохранения требуется ФИО.' : state.dirty ? 'Есть несохранённые изменения' : `Сохранено. Последняя проверка: ${formatDate(state.current.checked_at)}`;
+  $('#save').disabled = state.busy || (!isNew && !state.dirty);
+  $('#approve').disabled = isNew || state.dirty || state.busy || state.current.status === 'approved' || !(fullContent(state.current.data)||state.current.data.mini?.trim());
+  $('#render-full').disabled = isNew || state.dirty || state.busy || !state.current.data.template || !fullContent(state.current.data);
+  $('#render-mini').disabled = isNew || state.dirty || state.busy || !state.current.data.mini?.trim();
+  $('#new-profile').disabled=state.busy;
 }
 function dirty() {
   state.dirty = true; updateActions();
@@ -109,12 +166,26 @@ function clearPreview() {
 }
 async function save(approve = false) {
   if (state.busy) return;
+  if (!state.form.name.trim()) {state.tab='full';editor();$('[data-field="name"]').focus();throw new Error('Укажите ФИО преподавателя перед сохранением.');}
   if (approve && !window.confirm('Вы проверили сведения в полном и мини-резюме? Подтверждение относится к содержанию текущей редакции.')) return;
   state.busy = true; updateActions();
   try {
-    state.current = await api('profiles/' + state.current.id, {data:state.form, revision:state.current.revision, approve});
-    state.form = structuredClone(state.current.data); state.dirty = false;
+    const isNew=!state.current.id;
+    const submitted=isNew?(state.creationRequest ||= {request_id:state.requestId,data:editableData(state.form)}):{data:editableData(state.form),revision:state.current.revision,approve};
+    const result=await api(isNew?'profiles':'profiles/'+state.current.id,submitted);
+    const changedDuringSave=JSON.stringify(editableData(state.form))!==JSON.stringify(submitted.data);
+    const pending=editableData(state.form);
+    state.current=result; state.form=structuredClone(result.data);
+    if(changedDuringSave)Object.assign(state.form,pending);
+    state.dirty=changedDuringSave; state.creationRequest=null; state.requestId=null;
+    if(!window.ResumeDemo)history.replaceState(null,'','/resumes/editor?id='+encodeURIComponent(result.id));
     clearPreview(); editor(); await refreshCatalog(); notify(approve ? 'Сведения подтверждены. Дата проверки сохранена.' : window.ResumeDemo ? 'Редакция сохранена в этом браузере. Сборка файлов после правок доступна в серверной версии.' : 'Новая редакция сохранена. Можно собрать документ.');
+    if(isNew)notify(changedDuringSave?'Карточка создана. Последние изменения ещё не сохранены: проверьте их и сохраните черновик.':'Преподаватель добавлен в базу. Заполняйте полное и мини-резюме в нужном объёме.');
+  } catch(error) {
+    // Явная ошибка проверки не создала карточку: исправленная форма может
+    // отправиться с тем же ключом. При потерянном ответе повторяем снимок.
+    if(!state.current.id && [400,413,422].includes(error.status))state.creationRequest=null;
+    throw error;
   } finally { state.busy = false; updateActions(); catalog(); }
 }
 async function render(kind, collection = false) {
@@ -172,7 +243,7 @@ $('#editor').addEventListener('click', guarded(async event=>{
   else if(b.id==='approve') await save(true);
   else if(b.id==='render-full') await render('full');
   else if(b.id==='render-mini') await render('mini');
-  else if(b.id==='add-section'){state.form.sections.push({title:'НОВЫЙ РАЗДЕЛ',content:'',rows:[]});dirty();editor();}
+  else if(b.id==='add-section'){$('#section-search').value='';$('#custom-section-title').value='';$('#section-error').textContent='';drawSectionChoices();$('#section-dialog').showModal();$('#section-search').focus();}
   else if(d.addRow!==undefined){
     state.form.sections[+d.addRow].rows.unshift({period:'',text:''});
     dirty();editor();
@@ -182,8 +253,12 @@ $('#editor').addEventListener('click', guarded(async event=>{
   else if(d.removeSection!==undefined){if(window.confirm('Удалить раздел из черновика? Сохранённая версия останется в истории.')){state.form.sections.splice(+d.removeSection,1);dirty();editor();}}
   else if(d.up!==undefined){const i=+d.up;[state.form.sections[i-1],state.form.sections[i]]=[state.form.sections[i],state.form.sections[i-1]];dirty();editor();}
   else if(b.id==='append-addition'){
-    const text=$('#addition').value.trim(), target=$('#addition-target').value;if(!text)return;
-    if(target==='intro')state.form.intro+=(state.form.intro?'\n\n':'')+text;
+    const text=$('#addition').value.trim(), [kind,target]=$('#addition-target').value.split(':');if(!text)return;
+    if(kind==='field')state.form[target]+=(state.form[target]?'\n\n':'')+text;
+    else if(kind==='new'){
+      if(state.form.sections.length>=30)throw new Error('В одном резюме допускается до 30 разделов.');
+      state.form.sections.push({title:state.sections[+target],content:text,rows:[]});
+    }
     else {const s=state.form.sections[+target];s.content+=(s.content?'\n\n':'')+text;}
     dirty();editor();notify('Сведения добавлены в черновик. Проверьте текст и сохраните редакцию.');
   }
@@ -193,15 +268,20 @@ $('#editor').addEventListener('click', guarded(async event=>{
   }
   else if(d.restore){
     if(!canLeave())return;const old=await api(`profiles/${state.current.id}/history/${d.restore}`);
-    for(const k of ['name','intro','mini','mini_clients','compiled','sections'])state.form[k]=structuredClone(old.data[k]);
+    for(const k of ['name','intro','mini','mini_clients','sections'])state.form[k]=structuredClone(old.data[k]);
     state.tab='full';dirty();editor();notify('Прежний текст загружен в редактор. Сохраните его как новую редакцию.');
   }
 }));
 $('#close-source').addEventListener('click',()=>$('#source-dialog').close());
+$('#new-profile').addEventListener('click',newProfile);
+$('#close-sections').addEventListener('click',()=>$('#section-dialog').close());
+$('#section-search').addEventListener('input',drawSectionChoices);
+$('#section-options').addEventListener('click',guarded(event=>{const b=event.target.closest('[data-section-choice]');if(b)chooseSection(sectionChoices()[+b.dataset.sectionChoice]);}));
+$('#add-custom-section').addEventListener('click',guarded(()=>chooseSection($('#custom-section-title').value)));
 $('#apply-source').addEventListener('click',guarded(async()=>{
   if(!canLeave())return;
   state.current=await api(`profiles/${state.current.id}/source`,{source_id:state.source,revision:state.current.revision});
   state.form=structuredClone(state.current.data);state.dirty=false;state.tab='full';$('#source-dialog').close();clearPreview();editor();await refreshCatalog();notify('Исходник выбран. Создана новая редакция для проверки.');
 }));
 window.addEventListener('beforeunload',event=>{if(state.dirty){event.preventDefault();event.returnValue='';}});
-guarded(async()=>{await refreshCatalog(); const requested=new URLSearchParams(location.search).get('id'); if(state.catalog.length) await openProfile(state.catalog.find(p=>p.id===requested)?.id || state.catalog[0].id);else $('#editor').innerHTML='<p class="empty">База пустая. Сначала выполните локальный импорт материалов.</p>';})();
+guarded(async()=>{if(window.ResumeDemo)$('#new-profile').hidden=true;await refreshCatalog();if(state.current)return;const params=new URLSearchParams(location.search),requested=params.get('id');if(params.get('new')==='1'&&!window.ResumeDemo)newProfile();else if(state.catalog.length)await openProfile(state.catalog.find(p=>p.id===requested)?.id||state.catalog[0].id);else newProfile();})();

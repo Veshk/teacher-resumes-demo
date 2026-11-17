@@ -5,9 +5,12 @@
   try{records=JSON.parse(localStorage.getItem(storageKey));}catch{}
   if(!Array.isArray(records)||records.length!==window.RESUME_DEMO_SEED.length)records=structuredClone(window.RESUME_DEMO_SEED);
   const copy=value=>structuredClone(value);
-  const editable=d=>JSON.stringify(['name','intro','compiled','mini','mini_clients','sections'].map(k=>d[k]));
+  const content=d=>({...Object.fromEntries(['name','intro','mini','mini_clients'].map(k=>[k,(d[k]||'').trim()])),sections:(d.sections||[]).map(s=>({title:s.title.trim(),content:s.content.trim(),rows:s.rows.map(r=>({period:r.period.trim(),text:r.text.trim()})).filter(r=>r.period||r.text)}))});
+  const editable=d=>JSON.stringify([content(d),d.compiled||'']);
+  const compiledAt=date=>{const parts=new Intl.DateTimeFormat('en',{timeZone:'Asia/Yekaterinburg',year:'numeric',month:'numeric'}).formatToParts(date);const get=type=>parts.find(p=>p.type===type).value;const months=['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];return `составлено — ${months[Number(get('month'))-1]} ${get('year')}`;};
   const persist=()=>{try{localStorage.setItem(storageKey,JSON.stringify(records));}catch{throw new Error('Браузер запретил сохранение демо. Разрешите локальное хранилище или откройте обычную вкладку.');}};
   window.ResumeDemo={api:async(path,body)=>{
+    if(path==='options')return{sections:[...new Set(records.flatMap(p=>p.data.sections.map(s=>s.title)))]};
     if(path==='profiles')return{profiles:records.map(p=>({id:p.id,name:p.name,revision:p.revision,status:p.status,checked_at:p.checked_at,updated_at:p.updated_at,intro:p.data.intro||p.data.mini,has_full:!!p.data.template,has_mini:!!p.data.mini,has_photo:false,sources:0})),unmatched:[]};
     if(path==='render'){
       const profiles=body.profiles.map(v=>{const p=records.find(x=>x.id===v.id);if(!p||p.revision!==v.revision)throw new Error('Карточка изменилась. Обновите страницу.');return p;});
@@ -22,7 +25,7 @@
     if(body){
       if(body.revision!==p.revision)throw new Error('Карточка уже изменилась. Обновите страницу.');
       if(!body.data?.name?.trim())throw new Error('Укажите имя преподавателя.');
-      const stamp=new Date().toISOString();p.data=copy(body.data);p.name=p.data.name;p.revision++;p.updated_at=stamp;p.status=body.approve?'approved':'draft';p.checked_at=body.approve?stamp:null;
+      const date=new Date(),stamp=date.toISOString(),clean=content(body.data);const changed=JSON.stringify(clean)!==JSON.stringify(content(p.data));const service=Object.fromEntries(['photo','template','mini_source','source_id'].map(k=>[k,p.data[k]||'']));p.data={...clean,...service,compiled:changed?compiledAt(date):(p.data.compiled||'')};p.name=p.data.name;p.revision++;p.updated_at=stamp;p.status=body.approve?'approved':'draft';p.checked_at=body.approve?stamp:null;
       p.history.unshift({number:p.revision,status:p.status,checked_at:p.checked_at,at:stamp,actor:'Пользователь демонстрации',action:body.approve?'Сведения подтверждены в демо':'Черновик сохранён в браузере',data:copy(p.data)});persist();
     }
     return copy(p);
